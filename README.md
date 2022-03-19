@@ -1,4 +1,4 @@
-![](https://img.shields.io/badge/PerFedAvg-pytorch-brightgreen)
+![](https://img.shields.io/badge/PerFedAvg-pytorch-green)
 # Per-FedAvg
 PyTorch implementation of Per-FedAvg (Personalized Federated Learning: A Meta-Learning Approach).
 

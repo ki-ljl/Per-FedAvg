@@ -33,7 +33,7 @@ from data_process import nn_seq_wind
 #         # model为F(w)
 #         # 3. step3
 #         origin_model = get_grad2(args, data, origin_model)
-#         # 3.最终更新
+#         # 3.
 #         for param, grad1, grad2 in zip(final_model.parameters(), origin_model.parameters(), model.parameters()):
 #             I = torch.ones_like(param.data)
 #             grad = (I - args.alpha * grad1.data) * grad2.data
@@ -46,20 +46,21 @@ from data_process import nn_seq_wind
 
 def train(args, model):
     model.train()
+    original_model = copy.deepcopy(model)
     Dtr, Dte = nn_seq_wind(model.name, args.B)
     model.len = len(Dtr)
     print('training...')
     data = [x for x in iter(Dtr)]
     for epoch in range(args.E):
         # step1
-        model = one_step(args, data, model, lr=args.alpha)
+        model = one_step_1(args, data, model, lr=args.alpha)
         # step2
-        model = one_step(args, data, model, lr=args.beta)
+        model = one_step_2(args, data, original_model, model, lr=args.beta)
 
     return model
 
 
-def one_step(args, data, model, lr):
+def one_step_1(args, data, model, lr):
     ind = np.random.randint(0, high=len(data), size=None, dtype=int)
     seq, label = data[ind]
     seq = seq.to(args.device)
@@ -73,6 +74,24 @@ def one_step(args, data, model, lr):
     optimizer.step()
 
     return model
+
+
+def one_step_2(args, data, original_model, model, lr):
+    ind = np.random.randint(0, high=len(data), size=None, dtype=int)
+    seq, label = data[ind]
+    seq = seq.to(args.device)
+    label = label.to(args.device)
+    # meta function parameter
+    y_pred = model(seq)
+    # update original model
+    optimizer = torch.optim.Adam(original_model.parameters(), lr=lr)
+    loss_function = nn.MSELoss().to(args.device)
+    loss = loss_function(y_pred, label)
+    optimizer.zero_grad()
+    loss.backward()
+    optimizer.step()
+
+    return original_model
 
 
 def get_grad(args, data, model):

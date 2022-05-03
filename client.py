@@ -12,55 +12,40 @@ import torch
 from sklearn.metrics import mean_absolute_error, mean_squared_error
 from torch import nn
 import copy
-from torch.autograd.functional import hessian
 
 from data_process import nn_seq_wind
 
 
-# def train(args, model):
-#     model.train()
-#     Dtr, Dte = nn_seq_wind(model.name, args.B)
-#     model.len = len(Dtr)
-#     print('training...')
-#     data = [x for x in iter(Dtr)]
-#     for epoch in range(args.E):
-#         origin_model = copy.deepcopy(model)
-#         final_model = copy.deepcopy(model)
-#         # 1. step1
-#         model = one_step(args, data, model)
-#         # 2. step2
-#         model = get_grad(args, data, model)
-#         # model为F(w)
-#         # 3. step3
-#         origin_model = get_grad2(args, data, origin_model)
-#         # 3.
-#         for param, grad1, grad2 in zip(final_model.parameters(), origin_model.parameters(), model.parameters()):
-#             I = torch.ones_like(param.data)
-#             grad = (I - args.alpha * grad1.data) * grad2.data
-#             param.data = param.data - args.beta * grad
-#
-#         model = copy.deepcopy(final_model)
-#
-#     return model
-
-
 def train(args, model):
     model.train()
-    original_model = copy.deepcopy(model)
     Dtr, Dte = nn_seq_wind(model.name, args.B)
     model.len = len(Dtr)
     print('training...')
     data = [x for x in iter(Dtr)]
     for epoch in range(args.E):
+        origin_model = copy.deepcopy(model)
+        final_model = copy.deepcopy(model)
         # step1
-        model = one_step_1(args, data, model, lr=args.alpha)
+        model = one_step(args, data, model, lr=args.alpha)
         # step2
-        model = one_step_2(args, data, original_model, model, lr=args.beta)
+        model = get_grad(args, data, model)
+        # step3
+        hessian_params = get_hessian(args, data, origin_model)
+        # step 4
+        cnt = 0
+        for param, param_grad in zip(final_model.parameters(), model.parameters()):
+            hess = hessian_params[cnt]
+            cnt += 1
+            I = torch.ones_like(param.data)
+            grad = (I - args.alpha * hess) * param_grad.grad.data
+            param.data = param.data - args.beta * grad
+
+        model = copy.deepcopy(final_model)
 
     return model
 
 
-def one_step_1(args, data, model, lr):
+def one_step(args, data, model, lr):
     ind = np.random.randint(0, high=len(data), size=None, dtype=int)
     seq, label = data[ind]
     seq = seq.to(args.device)
@@ -76,24 +61,6 @@ def one_step_1(args, data, model, lr):
     return model
 
 
-def one_step_2(args, data, original_model, model, lr):
-    ind = np.random.randint(0, high=len(data), size=None, dtype=int)
-    seq, label = data[ind]
-    seq = seq.to(args.device)
-    label = label.to(args.device)
-    # meta function parameter
-    y_pred = model(seq)
-    # update original model
-    optimizer = torch.optim.Adam(original_model.parameters(), lr=lr)
-    loss_function = nn.MSELoss().to(args.device)
-    loss = loss_function(y_pred, label)
-    optimizer.zero_grad()
-    loss.backward()
-    optimizer.step()
-
-    return original_model
-
-
 def get_grad(args, data, model):
     ind = np.random.randint(0, high=len(data), size=None, dtype=int)
     seq, label = data[ind]
@@ -102,25 +69,33 @@ def get_grad(args, data, model):
     y_pred = model(seq)
     loss_function = nn.MSELoss().to(args.device)
     loss = loss_function(y_pred, label)
-    # grad_x = torch.autograd.grad(loss, model.parameters())
     loss.backward()
+
     return model
 
 
-def get_grad2(args, data, model):
+def get_hessian(args, data, model):
     ind = np.random.randint(0, high=len(data), size=None, dtype=int)
     seq, label = data[ind]
     seq = seq.to(args.device)
     label = label.to(args.device)
     y_pred = model(seq)
-    optimizer = torch.optim.Adam(model.parameters(), lr=args.alpha)
     loss_function = nn.MSELoss().to(args.device)
     loss = loss_function(y_pred, label)
-    loss.backward(create_graph=True)
-    optimizer.zero_grad()
-    loss.backward()
+    grads = torch.autograd.grad(loss, model.parameters(), retain_graph=True, create_graph=True)
+    hessian_params = []
+    for k in range(len(grads)):
+        hess_params = torch.zeros_like(grads[k])
+        for i in range(grads[k].size(0)):
+            # w or b?
+            if len(grads[k].size()) == 2:
+                for j in range(grads[k].size(1)):
+                    hess_params[i, j] = torch.autograd.grad(grads[k][i][j], model.parameters(), retain_graph=True)[k][i, j]
+            else:
+                hess_params[i] = torch.autograd.grad(grads[k][i], model.parameters(), retain_graph=True)[k][i]
+        hessian_params.append(hess_params)
 
-    return model
+    return hessian_params
 
 
 def local_adaptation(args, model):
@@ -139,7 +114,7 @@ def local_adaptation(args, model):
             loss.backward()
             optimizer.step()
 
-        # print('local_adaptation loss', loss.item())
+        print('local_adaptation loss', loss.item())
 
     return model
 

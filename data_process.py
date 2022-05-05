@@ -91,8 +91,8 @@ def nn_seq_wind(file_name, B):
 
 def get_mape(x, y):
     """
-    :param x:true value
-    :param y:pred value
-    :return:mape
+    :param x: true value
+    :param y: pred value
+    :return: mape
     """
     return np.mean(np.abs((x - y) / x))

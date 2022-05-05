@@ -18,10 +18,11 @@ from data_process import nn_seq_wind
 
 def train(args, model):
     """
-    Client training
-    :param args:hyperparameters
-    :param model:server model
-    :return:client model after training
+    Client training.
+
+    :param args: hyperparameters
+    :param model: server model
+    :return: client model after training
     """
     model.train()
     Dtr, Dte = nn_seq_wind(model.name, args.B)
@@ -53,11 +54,11 @@ def train(args, model):
 
 def one_step(args, data, model, lr):
     """
-    :param args:hyperparameters
+    :param args: hyperparameters
     :param data: a batch of data
-    :param model:original client model
-    :param lr:learning rate
-    :return:model after one step gradient descent
+    :param model: original client model
+    :param lr: learning rate
+    :return: model after one step gradient descent
     """
     ind = np.random.randint(0, high=len(data), size=None, dtype=int)
     seq, label = data[ind]
@@ -76,8 +77,8 @@ def one_step(args, data, model, lr):
 
 def get_grad(args, data, model):
     """
-    :param args:hyperparameters
-    :param data:a batch of data
+    :param args: hyperparameters
+    :param data: a batch of data
     :param model: model after one step gradient descent
     :return: gradient
     """
@@ -95,7 +96,7 @@ def get_grad(args, data, model):
 
 def get_hessian(args, data, model):
     """
-    :param args:hyperparameters
+    :param args: hyperparameters
     :param data: a batch of data
     :param model: original model
     :return: hessian matrix
@@ -126,7 +127,8 @@ def get_hessian(args, data, model):
 
 def local_adaptation(args, model):
     """
-    Adaptive training
+    Adaptive training.
+
     :param args:hyperparameters
     :param model: federated global model
     :return:final model after adaptive training

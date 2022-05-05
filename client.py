@@ -152,11 +152,6 @@ def local_adaptation(args, model):
 
 
 def test(args, ann):
-    """
-    :param args:hyperparameters
-    :param ann: final model
-    :return:
-    """
     ann.eval()
     Dtr, Dte = nn_seq_wind(ann.name, args.B)
     pred = []

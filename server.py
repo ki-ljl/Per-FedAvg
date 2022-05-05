@@ -14,7 +14,7 @@ from model import ANN
 import copy
 
 
-# Implementation of per-fedavg
+# Implementation for per-fedavg server
 class PerFed:
     def __init__(self, args):
         self.args = args

@@ -10,10 +10,6 @@ import torch
 
 
 def args_parser():
-    """
-    Hyperparameters setting
-    :return:hyperparameters
-    """
     parser = argparse.ArgumentParser()
 
     parser.add_argument('--E', type=int, default=5, help='number of rounds of training')

@@ -18,8 +18,8 @@ class ANN(nn.Module):
         self.relu = nn.ReLU()
         self.sigmoid = nn.Sigmoid()
         self.dropout = nn.Dropout()
-        self.fc2 = nn.Linear(20, 20)
-        self.fc3 = nn.Linear(20, 20)
+        self.fc2 = nn.Linear(20, 40)
+        self.fc3 = nn.Linear(40, 20)
         self.fc4 = nn.Linear(20, 1)
 
     def forward(self, data):

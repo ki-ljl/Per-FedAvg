@@ -17,6 +17,12 @@ from data_process import nn_seq_wind
 
 
 def train(args, model):
+    """
+    Client training
+    :param args:hyperparameters
+    :param model:server model
+    :return:client model after training
+    """
     model.train()
     Dtr, Dte = nn_seq_wind(model.name, args.B)
     model.len = len(Dtr)
@@ -46,6 +52,13 @@ def train(args, model):
 
 
 def one_step(args, data, model, lr):
+    """
+    :param args:hyperparameters
+    :param data: a batch of data
+    :param model:original client model
+    :param lr:learning rate
+    :return:model after one step gradient descent
+    """
     ind = np.random.randint(0, high=len(data), size=None, dtype=int)
     seq, label = data[ind]
     seq = seq.to(args.device)
@@ -62,6 +75,12 @@ def one_step(args, data, model, lr):
 
 
 def get_grad(args, data, model):
+    """
+    :param args:hyperparameters
+    :param data:a batch of data
+    :param model: model after one step gradient descent
+    :return: gradient
+    """
     ind = np.random.randint(0, high=len(data), size=None, dtype=int)
     seq, label = data[ind]
     seq = seq.to(args.device)
@@ -75,6 +94,12 @@ def get_grad(args, data, model):
 
 
 def get_hessian(args, data, model):
+    """
+    :param args:hyperparameters
+    :param data: a batch of data
+    :param model: original model
+    :return: hessian matrix
+    """
     ind = np.random.randint(0, high=len(data), size=None, dtype=int)
     seq, label = data[ind]
     seq = seq.to(args.device)
@@ -90,7 +115,8 @@ def get_hessian(args, data, model):
             # w or b?
             if len(grads[k].size()) == 2:
                 for j in range(grads[k].size(1)):
-                    hess_params[i, j] = torch.autograd.grad(grads[k][i][j], model.parameters(), retain_graph=True)[k][i, j]
+                    hess_params[i, j] = torch.autograd.grad(grads[k][i][j], model.parameters(), retain_graph=True)[k][
+                        i, j]
             else:
                 hess_params[i] = torch.autograd.grad(grads[k][i], model.parameters(), retain_graph=True)[k][i]
         hessian_params.append(hess_params)
@@ -99,6 +125,12 @@ def get_hessian(args, data, model):
 
 
 def local_adaptation(args, model):
+    """
+    Adaptive training
+    :param args:hyperparameters
+    :param model: federated global model
+    :return:final model after adaptive training
+    """
     model.train()
     Dtr, Dte = nn_seq_wind(model.name, 50)
     optimizer = torch.optim.Adam(model.parameters(), lr=args.alpha)
@@ -120,6 +152,11 @@ def local_adaptation(args, model):
 
 
 def test(args, ann):
+    """
+    :param args:hyperparameters
+    :param ann: final model
+    :return:
+    """
     ann.eval()
     Dtr, Dte = nn_seq_wind(ann.name, args.B)
     pred = []

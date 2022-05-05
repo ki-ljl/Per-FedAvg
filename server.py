@@ -14,6 +14,7 @@ from model import ANN
 import copy
 
 
+# Implementation of per-fedavg
 class PerFed:
     def __init__(self, args):
         self.args = args
@@ -29,11 +30,11 @@ class PerFed:
             print('round', t + 1, ':')
             m = np.max([int(self.args.C * self.args.K), 1])
             index = random.sample(range(0, self.args.K), m)  # st
-            # dispatch
+            # dispatch parameters
             self.dispatch(index)
             # local updating
             self.client_update(index)
-            # aggregation
+            # aggregation parameters
             self.aggregation(index)
 
         return self.nn

@@ -21,10 +21,13 @@ clients_wind = ['Task1_W_Zone' + str(i) for i in range(1, 11)]
 
 
 def load_data(file_name):
+    """
+    :param file_name: csv file name
+    :return: normalized dataframe
+    """
     df = pd.read_csv('data/Wind/Task 1/Task1_W_Zone1_10/' + file_name + '.csv', encoding='gbk')
     columns = df.columns
     df.fillna(df.mean(), inplace=True)
-    # df = df[0:int(len(df) / 10)]
     for i in range(3, 7):
         MAX = np.max(df[columns[i]])
         MIN = np.min(df[columns[i]])
@@ -45,7 +48,11 @@ class MyDataset(Dataset):
 
 
 def nn_seq_wind(file_name, B):
-    # print('data processing...')
+    """
+    :param file_name: csv file name
+    :param B: batch size
+    :return: DataLoader data
+    """
     data = load_data(file_name)
     columns = data.columns
     wind = data[columns[2]]
@@ -84,8 +91,8 @@ def nn_seq_wind(file_name, B):
 
 def get_mape(x, y):
     """
-    :param x:true
-    :param y:pred
-    :return:MAPE
+    :param x:true value
+    :param y:pred value
+    :return:mape
     """
     return np.mean(np.abs((x - y) / x))

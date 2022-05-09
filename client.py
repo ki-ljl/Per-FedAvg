@@ -12,24 +12,27 @@ import torch
 from sklearn.metrics import mean_absolute_error, mean_squared_error
 from torch import nn
 import copy
+from tqdm import tqdm
 
 from data_process import nn_seq_wind
 
 
-def train(args, model):
+def train(args, model, ind, round):
     """
     Client training.
 
     :param args: hyperparameters
     :param model: server model
+    :param ind: client id
+    :param round: round
     :return: client model after training
     """
     model.train()
     Dtr, Dte = nn_seq_wind(model.name, args.B)
     model.len = len(Dtr)
-    print('training...')
+    # print('training...')
     data = [x for x in iter(Dtr)]
-    for epoch in range(args.E):
+    for epoch in tqdm(range(args.E), desc='round' + str(round) + ' client' + str(ind) + ' local updating'):
         origin_model = copy.deepcopy(model)
         final_model = copy.deepcopy(model)
         # step1
@@ -158,7 +161,7 @@ def test(args, ann):
     Dtr, Dte = nn_seq_wind(ann.name, args.B)
     pred = []
     y = []
-    for (seq, target) in Dte:
+    for (seq, target) in tqdm(Dte):
         with torch.no_grad():
             seq = seq.to(args.device)
             y_pred = ann(seq)

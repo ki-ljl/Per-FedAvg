@@ -12,6 +12,7 @@ import random
 from client import train, test, local_adaptation
 from model import ANN
 import copy
+from tqdm import tqdm
 
 
 # Implementation for per-fedavg server.
@@ -20,20 +21,21 @@ class PerFed:
         self.args = args
         self.nn = ANN(args=self.args, name='server').to(args.device)
         self.nns = []
+        # init
         for i in range(self.args.K):
             temp = copy.deepcopy(self.nn)
             temp.name = self.args.clients[i]
             self.nns.append(temp)
 
     def server(self):
-        for t in range(self.args.r):
-            print('round', t + 1, ':')
+        for t in tqdm(range(self.args.r), desc='round'):
+            # print('round', t + 1, ':')
             m = np.max([int(self.args.C * self.args.K), 1])
             index = random.sample(range(0, self.args.K), m)  # st
             # dispatch parameters
             self.dispatch(index)
             # local updating
-            self.client_update(index)
+            self.client_update(index, t)
             # aggregation parameters
             self.aggregation(index)
 
@@ -62,12 +64,12 @@ class PerFed:
             for old_params, new_params in zip(self.nns[j].parameters(), self.nn.parameters()):
                 old_params.data = new_params.data.clone()
 
-    def client_update(self, index):  # update nn
+    def client_update(self, index, t):  # update nn
         for k in index:
-            self.nns[k] = train(self.args, self.nns[k])
+            self.nns[k] = train(self.args, self.nns[k], k, t)
 
     def global_test(self):
-        for j in range(self.args.K):
+        for j in tqdm(range(self.args.K), 'global test'):
             model = copy.deepcopy(self.nn)
             model.name = self.args.clients[j]
             model = local_adaptation(self.args, model)

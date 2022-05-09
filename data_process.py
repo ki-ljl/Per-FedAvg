@@ -11,6 +11,7 @@ import numpy as np
 import pandas as pd
 import torch
 from args import args_parser
+from tqdm import tqdm
 
 sys.path.append('../')
 from torch.utils.data import Dataset, DataLoader

@@ -5,6 +5,7 @@
 @File: client.py
 @Motto: Hungry And Humble
 """
+from collections import OrderedDict
 from itertools import chain
 
 import numpy as np
@@ -15,6 +16,71 @@ import copy
 from tqdm import tqdm
 
 from get_data import nn_seq_wind
+
+
+def get_data_batch(args, data):
+    ind = np.random.randint(0, high=len(data), size=None, dtype=int)
+    seq, label = data[ind]
+    seq, label = seq.to(args.device), label.to(args.device)
+
+    return seq, label
+
+
+def compute_grad(args, model,
+                 data_batch,
+                 v=None,
+                 second_order_grads=False):
+    criterion = nn.MSELoss().to(args.device)
+    x, y = data_batch
+    if second_order_grads:
+        frz_model_params = copy.deepcopy(model.state_dict())
+        delta = 1e-3
+        dummy_model_params_1 = OrderedDict()
+        dummy_model_params_2 = OrderedDict()
+        with torch.no_grad():
+            for (layer_name, param), grad in zip(model.named_parameters(), v):
+                dummy_model_params_1.update({layer_name: param + delta * grad})
+                dummy_model_params_2.update({layer_name: param - delta * grad})
+
+        model.load_state_dict(dummy_model_params_1, strict=False)
+        logit_1 = model(x)
+        loss_1 = criterion(logit_1, y)
+        grads_1 = torch.autograd.grad(loss_1, model.parameters())
+
+        model.load_state_dict(dummy_model_params_2, strict=False)
+        logit_2 = model(x)
+        loss_2 = criterion(logit_2, y)
+        grads_2 = torch.autograd.grad(loss_2, model.parameters())
+
+        model.load_state_dict(frz_model_params)
+
+        grads = []
+        with torch.no_grad():
+            for g1, g2 in zip(grads_1, grads_2):
+                grads.append((g1 - g2) / (2 * delta))
+        return grads
+
+    else:
+        logit = model(x)
+        loss = criterion(logit, y)
+        grads = torch.autograd.grad(loss, model.parameters())
+        return grads
+
+
+@torch.no_grad()
+def get_loss(args, model, datas):
+    model.eval()
+    device = args.device
+    loss_function = nn.MSELoss().to(device)
+    losses = []
+    for (seq, label) in datas:
+        with torch.no_grad():
+            seq, label = seq.to(device), label.to(device)
+            output = model(seq)
+            loss = loss_function(output, label)
+            losses.append(loss.cpu().item())
+
+    return np.mean(losses)
 
 
 def train(args, model, ind, round):
@@ -28,104 +94,149 @@ def train(args, model, ind, round):
     :return: client model after training
     """
     model.train()
-    Dtr, Dte = nn_seq_wind(model.name, args.B)
+    Dtr, _ = nn_seq_wind(model.name, args.B)
     model.len = len(Dtr)
     # print('training...')
-    data = [x for x in iter(Dtr)]
-    for epoch in tqdm(range(args.E), desc='round' + str(round) + ' client' + str(ind) + ' local updating'):
-        origin_model = copy.deepcopy(model)
-        final_model = copy.deepcopy(model)
-        # step1
-        model = one_step(args, data, model, lr=args.alpha)
-        # step2
-        model = get_grad(args, data, model)
-        # step3
-        hessian_params = get_hessian(args, data, origin_model)
-        # step 4
-        cnt = 0
-        for param, param_grad in zip(final_model.parameters(), model.parameters()):
-            hess = hessian_params[cnt]
-            cnt += 1
-            I = torch.ones_like(param.data)
-            grad = (I - args.alpha * hess) * param_grad.grad.data
-            param.data = param.data - args.beta * grad
+    model.train()
+    model.len = len(Dtr)
+    print('training...')
+    Dtr = [x for x in iter(Dtr)]
+    for epoch in tqdm(range(args.E)):
+        temp_model = copy.deepcopy(model)
+        data_batch_1 = get_data_batch(args, Dtr)
+        grads = compute_grad(args, temp_model, data_batch_1)
+        for param, grad in zip(temp_model.parameters(), grads):
+            param.data.sub_(args.alpha * grad)
 
-        model = copy.deepcopy(final_model)
+        data_batch_2 = get_data_batch(args, Dtr)
+        grads_1st = compute_grad(args, temp_model, data_batch_2)
 
-    return model
+        data_batch_3 = get_data_batch(args, Dtr)
 
+        grads_2nd = compute_grad(args,
+                                 model, data_batch_3,
+                                 v=grads_1st, second_order_grads=True)
+        for param, grad1, grad2 in zip(
+                model.parameters(), grads_1st, grads_2nd
+        ):
+            param.data.sub_(args.beta * grad1 - args.beta * args.alpha * grad2)
 
-def one_step(args, data, model, lr):
-    """
-    :param args: hyperparameters
-    :param data: a batch of data
-    :param model: original client model
-    :param lr: learning rate
-    :return: model after one step gradient descent
-    """
-    ind = np.random.randint(0, high=len(data), size=None, dtype=int)
-    seq, label = data[ind]
-    seq = seq.to(args.device)
-    label = label.to(args.device)
-    y_pred = model(seq)
-    optimizer = torch.optim.Adam(model.parameters(), lr=lr)
-    loss_function = nn.MSELoss().to(args.device)
-    loss = loss_function(y_pred, label)
-    optimizer.zero_grad()
-    loss.backward()
-    optimizer.step()
+        train_loss = get_loss(args, model, Dtr)
+        print('round {:02d} epoch {:03d} train_loss {:.8f}'.format(
+            round, epoch, train_loss))
 
     return model
 
 
-def get_grad(args, data, model):
-    """
-    :param args: hyperparameters
-    :param data: a batch of data
-    :param model: model after one step gradient descent
-    :return: gradient
-    """
-    ind = np.random.randint(0, high=len(data), size=None, dtype=int)
-    seq, label = data[ind]
-    seq = seq.to(args.device)
-    label = label.to(args.device)
-    y_pred = model(seq)
-    loss_function = nn.MSELoss().to(args.device)
-    loss = loss_function(y_pred, label)
-    loss.backward()
+# def train(args, model, ind, round):
+#     """
+#     Client training.
+#
+#     :param args: hyperparameters
+#     :param model: server model
+#     :param ind: client id
+#     :param round: round
+#     :return: client model after training
+#     """
+#     model.train()
+#     Dtr, Dte = nn_seq_wind(model.name, args.B)
+#     model.len = len(Dtr)
+#     # print('training...')
+#     data = [x for x in iter(Dtr)]
+#     for epoch in tqdm(range(args.E), desc='round' + str(round) + ' client' + str(ind) + ' local updating'):
+#         origin_model = copy.deepcopy(model)
+#         final_model = copy.deepcopy(model)
+#         # step1
+#         model = one_step(args, data, model, lr=args.alpha)
+#         # step2
+#         model = get_grad(args, data, model)
+#         # step3
+#         hessian_params = get_hessian(args, data, origin_model)
+#         # step 4
+#         cnt = 0
+#         for param, param_grad in zip(final_model.parameters(), model.parameters()):
+#             hess = hessian_params[cnt]
+#             cnt += 1
+#             I = torch.ones_like(param.data)
+#             grad = (I - args.alpha * hess) * param_grad.grad.data
+#             param.data = param.data - args.beta * grad
+#
+#         model = copy.deepcopy(final_model)
+#
+#     return model
 
-    return model
 
-
-def get_hessian(args, data, model):
-    """
-    :param args: hyperparameters
-    :param data: a batch of data
-    :param model: original model
-    :return: hessian matrix
-    """
-    ind = np.random.randint(0, high=len(data), size=None, dtype=int)
-    seq, label = data[ind]
-    seq = seq.to(args.device)
-    label = label.to(args.device)
-    y_pred = model(seq)
-    loss_function = nn.MSELoss().to(args.device)
-    loss = loss_function(y_pred, label)
-    grads = torch.autograd.grad(loss, model.parameters(), retain_graph=True, create_graph=True)
-    hessian_params = []
-    for k in range(len(grads)):
-        hess_params = torch.zeros_like(grads[k])
-        for i in range(grads[k].size(0)):
-            # w or b?
-            if len(grads[k].size()) == 2:
-                for j in range(grads[k].size(1)):
-                    hess_params[i, j] = torch.autograd.grad(grads[k][i][j], model.parameters(), retain_graph=True)[k][
-                        i, j]
-            else:
-                hess_params[i] = torch.autograd.grad(grads[k][i], model.parameters(), retain_graph=True)[k][i]
-        hessian_params.append(hess_params)
-
-    return hessian_params
+# def one_step(args, data, model, lr):
+#     """
+#     :param args: hyperparameters
+#     :param data: a batch of data
+#     :param model: original client model
+#     :param lr: learning rate
+#     :return: model after one step gradient descent
+#     """
+#     ind = np.random.randint(0, high=len(data), size=None, dtype=int)
+#     seq, label = data[ind]
+#     seq = seq.to(args.device)
+#     label = label.to(args.device)
+#     y_pred = model(seq)
+#     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
+#     loss_function = nn.MSELoss().to(args.device)
+#     loss = loss_function(y_pred, label)
+#     optimizer.zero_grad()
+#     loss.backward()
+#     optimizer.step()
+#
+#     return model
+#
+#
+# def get_grad(args, data, model):
+#     """
+#     :param args: hyperparameters
+#     :param data: a batch of data
+#     :param model: model after one step gradient descent
+#     :return: gradient
+#     """
+#     ind = np.random.randint(0, high=len(data), size=None, dtype=int)
+#     seq, label = data[ind]
+#     seq = seq.to(args.device)
+#     label = label.to(args.device)
+#     y_pred = model(seq)
+#     loss_function = nn.MSELoss().to(args.device)
+#     loss = loss_function(y_pred, label)
+#     loss.backward()
+#
+#     return model
+#
+#
+# def get_hessian(args, data, model):
+#     """
+#     :param args: hyperparameters
+#     :param data: a batch of data
+#     :param model: original model
+#     :return: hessian matrix
+#     """
+#     ind = np.random.randint(0, high=len(data), size=None, dtype=int)
+#     seq, label = data[ind]
+#     seq = seq.to(args.device)
+#     label = label.to(args.device)
+#     y_pred = model(seq)
+#     loss_function = nn.MSELoss().to(args.device)
+#     loss = loss_function(y_pred, label)
+#     grads = torch.autograd.grad(loss, model.parameters(), retain_graph=True, create_graph=True)
+#     hessian_params = []
+#     for k in range(len(grads)):
+#         hess_params = torch.zeros_like(grads[k])
+#         for i in range(grads[k].size(0)):
+#             # w or b?
+#             if len(grads[k].size()) == 2:
+#                 for j in range(grads[k].size(1)):
+#                     hess_params[i, j] = torch.autograd.grad(grads[k][i][j], model.parameters(), retain_graph=True)[k][
+#                         i, j]
+#             else:
+#                 hess_params[i] = torch.autograd.grad(grads[k][i], model.parameters(), retain_graph=True)[k][i]
+#         hessian_params.append(hess_params)
+#
+#     return hessian_params
 
 
 def local_adaptation(args, model):
